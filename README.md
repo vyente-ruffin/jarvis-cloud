@@ -1,262 +1,696 @@
-# JARVIS Cloud - Azure Memory System
+# JARVIS Cloud - Memory API
 
-A cloud-hosted AI memory system built on [Mem0](https://github.com/mem0ai/mem0) and [Qdrant](https://qdrant.tech/), deployed to Azure Container Apps. This serves as the long-term memory backend for the [ADA V2](https://github.com/nazirlouis/ada_v2) personal assistant.
+A cloud-hosted AI memory system providing long-term semantic memory storage via REST API. Built on [Mem0](https://github.com/mem0ai/mem0) and [Qdrant](https://qdrant.tech/), deployed to Azure Container Apps.
+
+Any service, device, or application can consume this API to store, retrieve, and search memories.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Azure Container Apps                                 │
-│                         (jarvis-env)                                        │
-│                                                                             │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
-│  │                 │    │                 │    │                 │         │
-│  │     Qdrant      │◄───│    Mem0 API     │    │    Mem0 UI      │         │
-│  │  Vector Store   │    │   (MCP Server)  │    │   (Dashboard)   │         │
-│  │                 │    │                 │    │                 │         │
-│  │   Port: 6333    │    │   Port: 8765    │    │   Port: 3000    │         │
-│  │   (internal)    │    │   (external)    │    │   (external)    │         │
-│  │                 │    │                 │    │                 │         │
-│  └─────────────────┘    └────────┬────────┘    └────────┬────────┘         │
-│                                  │                      │                   │
-│         Internal Ingress         │    External Ingress  │                   │
-│         (port 80)                │    (HTTPS)           │                   │
-│                                  │                      │                   │
-└──────────────────────────────────┼──────────────────────┼───────────────────┘
-                                   │                      │
-                                   ▼                      ▼
-                    ┌──────────────────────────┐  ┌──────────────────┐
-                    │                          │  │                  │
-                    │   MCP SSE Endpoint       │  │   Web Browser    │
-                    │   /mcp/claude/sse/sudo   │  │   Dashboard      │
-                    │                          │  │                  │
-                    └──────────────┬───────────┘  └──────────────────┘
-                                   │
-                                   ▼
-                    ┌──────────────────────────┐
-                    │                          │
-                    │        ADA V2            │
-                    │   Personal Assistant     │
-                    │                          │
-                    └──────────────────────────┘
+                                    JARVIS Cloud Memory API
+
+    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+    │   ADA V2    │     │  Smart Home │     │   Mobile    │
+    │  Assistant  │     │   Devices   │     │    App      │
+    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+           │                   │                   │
+           │      HTTPS REST API Calls             │
+           │                   │                   │
+           ▼                   ▼                   ▼
+    ┌─────────────────────────────────────────────────────┐
+    │                                                     │
+    │              JARVIS Cloud Memory API                │
+    │         https://mem0-api.<env>.azurecontainerapps.io│
+    │                                                     │
+    │    ┌─────────────────────────────────────────┐     │
+    │    │            API Endpoints                 │     │
+    │    │  POST /api/v1/memories/     (create)    │     │
+    │    │  GET  /api/v1/memories/     (list)      │     │
+    │    │  POST /api/v1/memories/filter (search)  │     │
+    │    │  GET  /api/v1/stats/        (stats)     │     │
+    │    └─────────────────────────────────────────┘     │
+    │                        │                           │
+    │                        ▼                           │
+    │    ┌─────────────────────────────────────────┐     │
+    │    │              Mem0 Engine                 │     │
+    │    │  • Fact extraction (OpenAI GPT-4o-mini) │     │
+    │    │  • Embeddings (text-embedding-3-small)  │     │
+    │    │  • Deduplication & categorization       │     │
+    │    └─────────────────────────────────────────┘     │
+    │                        │                           │
+    │                        ▼                           │
+    │    ┌─────────────────────────────────────────┐     │
+    │    │         Qdrant Vector Database          │     │
+    │    │  • Semantic similarity search           │     │
+    │    │  • High-performance vector storage      │     │
+    │    └─────────────────────────────────────────┘     │
+    │                                                     │
+    └─────────────────────────────────────────────────────┘
+
+                     Azure Container Apps
 ```
 
-## Components
+## Base URL
 
-| Component | Image | Purpose |
-|-----------|-------|---------|
-| **Qdrant** | `qdrant/qdrant:latest` | Vector database for semantic memory search |
-| **Mem0 API** | `mem0-patched:v3` (custom) | Memory API + MCP server for AI agents |
-| **Mem0 UI** | `mem0ai/openmemory-ui:latest` | Web dashboard to view/manage memories |
-
-## Current Deployment
-
-| Resource | URL |
-|----------|-----|
-| Mem0 API | https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io |
-| Mem0 UI | https://mem0-ui.greenstone-413be1c4.eastus.azurecontainerapps.io |
-| API Docs | https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/docs |
-
-## Prerequisites
-
-- **Azure CLI** installed and logged in (`az login`)
-- **Azure Subscription** with Container Apps support
-- **OpenAI API Key** for memory extraction and embeddings
-- **Azure Container Registry** (created during deployment)
-
-## Quick Start
-
-### Option 1: Automated Deployment
-
-```bash
-# Clone the repo
-git clone https://github.com/vyente-ruffin/jarvis-cloud.git
-cd jarvis-cloud
-
-# Run deployment script
-./scripts/deploy.sh jarvis-rg jarvisacr sk-proj-your-openai-key
+```
+https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io
 ```
 
-### Option 2: Manual Deployment
+**Interactive API Documentation:** [/docs](https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/docs)
 
-#### Step 1: Create Resource Group & Environment
+---
 
-```bash
-# Set variables
-RESOURCE_GROUP="jarvis-rg"
-LOCATION="eastus"
-ACR_NAME="jarvisacr$(date +%s)"
-ENVIRONMENT="jarvis-env"
+# API Reference
 
-# Create resource group
-az group create --name $RESOURCE_GROUP --location $LOCATION
+## Authentication
 
-# Create Azure Container Registry
-az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Basic --admin-enabled true
+Currently no authentication required. All requests use `user_id` parameter to isolate data.
 
-# Create Container Apps environment
-az containerapp env create --name $ENVIRONMENT --resource-group $RESOURCE_GROUP --location $LOCATION
+## Common Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `user_id` | string | Unique identifier for the user/device/service |
+| `app` | string | Application name (e.g., "jarvis", "smart-home") |
+
+---
+
+## Memories
+
+### Create Memory
+
+Store a new memory. The system automatically extracts facts and generates embeddings.
+
+**Endpoint:** `POST /api/v1/memories/`
+
+**Request Body:**
+```json
+{
+  "user_id": "string (required)",
+  "text": "string (required) - The content to remember",
+  "app": "string (optional, default: 'openmemory')",
+  "metadata": {"key": "value"},
+  "infer": true
+}
 ```
 
-#### Step 2: Build Custom Mem0 Image
-
-The official `mem0/openmemory-mcp` image has hardcoded Qdrant settings. We patch it for Azure:
-
+**Example:**
 ```bash
-# Build and push to ACR
-az acr build --registry $ACR_NAME --image mem0-patched:v3 --file Dockerfile .
-```
-
-#### Step 3: Deploy Qdrant
-
-```bash
-az containerapp create \
-  --name qdrant \
-  --resource-group $RESOURCE_GROUP \
-  --environment $ENVIRONMENT \
-  --image qdrant/qdrant:latest \
-  --cpu 0.5 --memory 1Gi \
-  --target-port 6333 \
-  --ingress internal \
-  --min-replicas 1
-
-# Enable HTTP access (required for mem0)
-az containerapp ingress update --name qdrant --resource-group $RESOURCE_GROUP --allow-insecure
-```
-
-#### Step 4: Deploy Mem0 API
-
-```bash
-az containerapp create \
-  --name mem0-api \
-  --resource-group $RESOURCE_GROUP \
-  --environment $ENVIRONMENT \
-  --image ${ACR_NAME}.azurecr.io/mem0-patched:v3 \
-  --registry-server ${ACR_NAME}.azurecr.io \
-  --cpu 0.5 --memory 1Gi \
-  --target-port 8765 \
-  --ingress external \
-  --secrets "openai-key=sk-proj-your-key" \
-  --env-vars "OPENAI_API_KEY=secretref:openai-key" "USER=sudo"
-```
-
-#### Step 5: Deploy Mem0 UI
-
-```bash
-# Get the Mem0 API URL
-MEM0_API_URL=$(az containerapp show --name mem0-api --resource-group $RESOURCE_GROUP --query "properties.configuration.ingress.fqdn" -o tsv)
-
-az containerapp create \
-  --name mem0-ui \
-  --resource-group $RESOURCE_GROUP \
-  --environment $ENVIRONMENT \
-  --image mem0ai/openmemory-ui:latest \
-  --cpu 0.25 --memory 0.5Gi \
-  --target-port 3000 \
-  --ingress external \
-  --env-vars "NEXT_PUBLIC_API_URL=https://${MEM0_API_URL}" "NEXT_PUBLIC_USER_ID=sudo"
-```
-
-## Usage
-
-### Add a Memory via API
-
-```bash
-curl -X POST "https://mem0-api.<env>.eastus.azurecontainerapps.io/api/v1/memories/" \
+curl -X POST "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "sudo",
-    "text": "I prefer dark mode for all applications"
+    "user_id": "jarvis-001",
+    "text": "User prefers temperature set to 72 degrees",
+    "app": "smart-home"
   }'
 ```
 
-### Search Memories
+**Response:**
+```json
+{
+  "id": "e1cc967e-a332-4a3f-a9f2-9d18f62a2bf0",
+  "content": "Prefers temperature set to 72 degrees",
+  "state": "active",
+  "app_id": "58be6e2a-c33f-44fa-acd5-15c085169200",
+  "created_at": "2026-01-11T20:42:42.621330",
+  "user_id": "bcce6c42-5277-4245-a9df-43b3d7f00287"
+}
+```
+
+---
+
+### List Memories
+
+Retrieve all memories for a user.
+
+**Endpoint:** `GET /api/v1/memories/`
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_id` | string | Yes | User identifier |
+| `app_id` | uuid | No | Filter by application |
+| `from_date` | integer | No | Unix timestamp - filter after this date |
+| `to_date` | integer | No | Unix timestamp - filter before this date |
+| `categories` | string | No | Filter by category |
+| `search_query` | string | No | Text search |
+| `page` | integer | No | Page number (default: 1) |
+| `size` | integer | No | Page size (default: 50, max: 100) |
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/?user_id=jarvis-001&size=10"
+```
+
+---
+
+### Search/Filter Memories
+
+Advanced search with multiple filters.
+
+**Endpoint:** `POST /api/v1/memories/filter`
+
+**Request Body:**
+```json
+{
+  "user_id": "string (required)",
+  "search_query": "string (optional) - semantic search",
+  "app_ids": ["uuid array (optional)"],
+  "category_ids": ["uuid array (optional)"],
+  "from_date": 1718505600,
+  "to_date": 1718592000,
+  "sort_column": "created_at",
+  "sort_direction": "desc",
+  "page": 1,
+  "size": 50
+}
+```
+
+**Example:**
+```bash
+curl -X POST "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/filter" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "jarvis-001",
+    "search_query": "temperature preferences"
+  }'
+```
+
+---
+
+### Get Single Memory
+
+Retrieve a specific memory by ID.
+
+**Endpoint:** `GET /api/v1/memories/{memory_id}`
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/e1cc967e-a332-4a3f-a9f2-9d18f62a2bf0"
+```
+
+---
+
+### Update Memory
+
+Update an existing memory's content.
+
+**Endpoint:** `PUT /api/v1/memories/{memory_id}`
+
+**Request Body:**
+```json
+{
+  "memory_content": "string (required) - new content",
+  "user_id": "string (required)"
+}
+```
+
+**Example:**
+```bash
+curl -X PUT "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/e1cc967e-a332-4a3f-a9f2-9d18f62a2bf0" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memory_content": "Prefers temperature set to 70 degrees",
+    "user_id": "jarvis-001"
+  }'
+```
+
+---
+
+### Delete Memories
+
+Delete one or more memories.
+
+**Endpoint:** `DELETE /api/v1/memories/`
+
+**Request Body:**
+```json
+{
+  "memory_ids": ["uuid array (required)"],
+  "user_id": "string (required)"
+}
+```
+
+**Example:**
+```bash
+curl -X DELETE "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memory_ids": ["e1cc967e-a332-4a3f-a9f2-9d18f62a2bf0"],
+    "user_id": "jarvis-001"
+  }'
+```
+
+---
+
+### Get Related Memories
+
+Find memories semantically related to a specific memory.
+
+**Endpoint:** `GET /api/v1/memories/{memory_id}/related`
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_id` | string | Yes | User identifier |
+| `page` | integer | No | Page number |
+| `size` | integer | No | Page size |
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/e1cc967e-a332-4a3f-a9f2-9d18f62a2bf0/related?user_id=jarvis-001"
+```
+
+---
+
+### Get Categories
+
+List all memory categories for a user.
+
+**Endpoint:** `GET /api/v1/memories/categories`
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/categories?user_id=jarvis-001"
+```
+
+---
+
+### Archive Memories
+
+Archive memories (soft delete).
+
+**Endpoint:** `POST /api/v1/memories/actions/archive`
+
+**Query Parameters:**
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `user_id` | uuid | Yes |
+
+**Request Body:** Array of memory UUIDs
+```json
+["uuid1", "uuid2", "uuid3"]
+```
+
+---
+
+### Pause Memories
+
+Temporarily pause memories from being returned in searches.
+
+**Endpoint:** `POST /api/v1/memories/actions/pause`
+
+**Request Body:**
+```json
+{
+  "user_id": "string (required)",
+  "memory_ids": ["uuid array (optional)"],
+  "category_ids": ["uuid array (optional)"],
+  "app_id": "uuid (optional)",
+  "all_for_app": false,
+  "global_pause": false,
+  "state": "paused"
+}
+```
+
+---
+
+### Get Memory Access Log
+
+View access history for a specific memory.
+
+**Endpoint:** `GET /api/v1/memories/{memory_id}/access-log`
+
+**Query Parameters:**
+| Parameter | Type | Default |
+|-----------|------|---------|
+| `page` | integer | 1 |
+| `page_size` | integer | 10 |
+
+---
+
+## Applications
+
+Track which applications/services are creating memories.
+
+### List Applications
+
+**Endpoint:** `GET /api/v1/apps/`
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Filter by app name |
+| `is_active` | boolean | Filter by active status |
+| `sort_by` | string | Sort column (default: "name") |
+| `sort_direction` | string | "asc" or "desc" |
+| `page` | integer | Page number |
+| `page_size` | integer | Results per page |
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/apps/"
+```
+
+---
+
+### Get Application Details
+
+**Endpoint:** `GET /api/v1/apps/{app_id}`
+
+---
+
+### Update Application
+
+Enable/disable an application.
+
+**Endpoint:** `PUT /api/v1/apps/{app_id}?is_active=true`
+
+---
+
+### Get Application Memories
+
+List all memories created by a specific application.
+
+**Endpoint:** `GET /api/v1/apps/{app_id}/memories`
+
+---
+
+### Get Application Access History
+
+List memories accessed by a specific application.
+
+**Endpoint:** `GET /api/v1/apps/{app_id}/accessed`
+
+---
+
+## Statistics
+
+### Get User Stats
+
+Get memory statistics for a user.
+
+**Endpoint:** `GET /api/v1/stats/`
+
+**Query Parameters:**
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `user_id` | string | Yes |
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/stats/?user_id=jarvis-001"
+```
+
+**Response:**
+```json
+{
+  "total_memories": 42,
+  "total_apps": 3,
+  "apps": [
+    {
+      "id": "7b85aa0b-678b-4199-a7d1-596ba6cf36f4",
+      "name": "jarvis",
+      "is_active": true,
+      "created_at": "2026-01-11T20:41:26.139667"
+    }
+  ]
+}
+```
+
+---
+
+## Configuration
+
+### Get Current Configuration
+
+**Endpoint:** `GET /api/v1/config/`
+
+**Example:**
+```bash
+curl "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/config/"
+```
+
+---
+
+### Update Configuration
+
+**Endpoint:** `PUT /api/v1/config/`
+
+**Request Body:**
+```json
+{
+  "openmemory": {
+    "custom_instructions": "string - custom fact extraction instructions"
+  },
+  "mem0": {
+    "llm": {
+      "provider": "openai",
+      "config": {
+        "model": "gpt-4o-mini",
+        "temperature": 0.1,
+        "max_tokens": 2000
+      }
+    },
+    "embedder": {
+      "provider": "openai",
+      "config": {
+        "model": "text-embedding-3-small"
+      }
+    }
+  }
+}
+```
+
+---
+
+### Reset Configuration
+
+Reset to default configuration.
+
+**Endpoint:** `POST /api/v1/config/reset`
+
+---
+
+### LLM Configuration
+
+- `GET /api/v1/config/mem0/llm` - Get LLM settings
+- `PUT /api/v1/config/mem0/llm` - Update LLM settings
+
+### Embedder Configuration
+
+- `GET /api/v1/config/mem0/embedder` - Get embedder settings
+- `PUT /api/v1/config/mem0/embedder` - Update embedder settings
+
+### OpenMemory Configuration
+
+- `GET /api/v1/config/openmemory` - Get custom instructions
+- `PUT /api/v1/config/openmemory` - Update custom instructions
+
+---
+
+# Integration Examples
+
+## Python
+
+```python
+import requests
+
+BASE_URL = "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io"
+USER_ID = "jarvis-001"
+
+# Create a memory
+def create_memory(text, app="jarvis"):
+    response = requests.post(
+        f"{BASE_URL}/api/v1/memories/",
+        json={"user_id": USER_ID, "text": text, "app": app}
+    )
+    return response.json()
+
+# Search memories
+def search_memories(query):
+    response = requests.post(
+        f"{BASE_URL}/api/v1/memories/filter",
+        json={"user_id": USER_ID, "search_query": query}
+    )
+    return response.json()
+
+# Get stats
+def get_stats():
+    response = requests.get(f"{BASE_URL}/api/v1/stats/?user_id={USER_ID}")
+    return response.json()
+
+# Usage
+create_memory("User's favorite color is blue")
+results = search_memories("favorite color")
+print(results)
+```
+
+## JavaScript/Node.js
+
+```javascript
+const BASE_URL = "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io";
+const USER_ID = "jarvis-001";
+
+// Create a memory
+async function createMemory(text, app = "jarvis") {
+  const response = await fetch(`${BASE_URL}/api/v1/memories/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: USER_ID, text, app })
+  });
+  return response.json();
+}
+
+// Search memories
+async function searchMemories(query) {
+  const response = await fetch(`${BASE_URL}/api/v1/memories/filter`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: USER_ID, search_query: query })
+  });
+  return response.json();
+}
+
+// Usage
+await createMemory("User wakes up at 7 AM");
+const results = await searchMemories("wake up time");
+console.log(results);
+```
+
+## cURL (Shell Scripts)
 
 ```bash
-curl "https://mem0-api.<env>.eastus.azurecontainerapps.io/api/v1/memories/?user_id=sudo"
+#!/bin/bash
+BASE_URL="https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io"
+USER_ID="jarvis-001"
+
+# Create memory
+create_memory() {
+  curl -s -X POST "$BASE_URL/api/v1/memories/" \
+    -H "Content-Type: application/json" \
+    -d "{\"user_id\": \"$USER_ID\", \"text\": \"$1\", \"app\": \"jarvis\"}"
+}
+
+# Search memories
+search_memories() {
+  curl -s -X POST "$BASE_URL/api/v1/memories/filter" \
+    -H "Content-Type: application/json" \
+    -d "{\"user_id\": \"$USER_ID\", \"search_query\": \"$1\"}"
+}
+
+# Usage
+create_memory "User prefers jazz music"
+search_memories "music preferences"
 ```
 
-### Get Stats
+## Home Assistant / IoT Devices
+
+```yaml
+# Example Home Assistant REST command
+rest_command:
+  jarvis_remember:
+    url: "https://mem0-api.greenstone-413be1c4.eastus.azurecontainerapps.io/api/v1/memories/"
+    method: POST
+    content_type: "application/json"
+    payload: '{"user_id": "home-assistant", "text": "{{ memory }}", "app": "smart-home"}'
+```
+
+---
+
+# Web Dashboard
+
+A web UI is available to view and manage memories:
+
+**URL:** https://mem0-ui.greenstone-413be1c4.eastus.azurecontainerapps.io
+
+Features:
+- View all memories
+- Search and filter
+- Edit/delete memories
+- View statistics
+- Manage applications
+
+---
+
+# Deployment
+
+## Prerequisites
+
+- Azure CLI installed and logged in (`az login`)
+- Azure Subscription
+- OpenAI API Key
+
+## Quick Deploy
 
 ```bash
-curl "https://mem0-api.<env>.eastus.azurecontainerapps.io/api/v1/stats/?user_id=sudo"
+git clone https://github.com/vyente-ruffin/jarvis-cloud.git
+cd jarvis-cloud
+./scripts/deploy.sh <resource-group> <acr-name> <openai-api-key>
 ```
 
-### MCP Integration (for AI Agents)
+## Manual Deployment
 
-Connect your AI agent to the MCP SSE endpoint:
+See [scripts/deploy.sh](scripts/deploy.sh) for step-by-step Azure CLI commands.
 
-```
-https://mem0-api.<env>.eastus.azurecontainerapps.io/mcp/claude/sse/sudo
-```
+---
 
-## Project Structure
+# Project Structure
 
 ```
 jarvis-cloud/
-├── README.md              # This file
+├── README.md              # This documentation
 ├── Dockerfile             # Custom Mem0 image with Azure fix
+├── .env.example           # Environment template
 ├── azure/
-│   ├── qdrant.yaml        # Qdrant container app definition
-│   ├── mem0-api.yaml      # Mem0 API container app definition
-│   └── mem0-ui.yaml       # Mem0 UI container app definition
-├── scripts/
-│   └── deploy.sh          # Automated deployment script
-└── .env.example           # Environment variables template
+│   ├── qdrant.yaml        # Qdrant container definition
+│   ├── mem0-api.yaml      # Mem0 API container definition
+│   └── mem0-ui.yaml       # Mem0 UI container definition
+└── scripts/
+    └── deploy.sh          # Automated deployment script
 ```
 
-## Key Technical Details
+---
 
-### The Qdrant Fix
+# Troubleshooting
 
-The official `mem0/openmemory-mcp` image has Qdrant connection settings hardcoded to `mem0_store:6333` (Docker Compose service name). For Azure Container Apps, we need to:
+## Memory client not available
 
-1. **Change the host** to the Azure internal FQDN: `qdrant.internal.<env>.<region>.azurecontainerapps.io`
-2. **Change the port** from `6333` to `80` (Azure internal ingress proxies to container port)
-3. **Enable insecure connections** on Qdrant ingress (HTTP, not HTTPS internally)
-
-This is done by patching the source code in the Dockerfile:
-
-```dockerfile
-RUN sed -i 's/"host": "mem0_store"/"host": "qdrant.internal.<env>.eastus.azurecontainerapps.io"/' \
-    /usr/src/openmemory/app/utils/memory.py
-RUN sed -i 's/"port": 6333/"port": 80/' /usr/src/openmemory/app/utils/memory.py
-```
-
-### Azure Container Apps Internal Ingress
-
-- Internal services use port 80/443, NOT the container port
-- The internal FQDN follows: `<app-name>.internal.<env-id>.<region>.azurecontainerapps.io`
-- `allowInsecure: true` is required for HTTP communication between containers
-
-## Troubleshooting
-
-### Memory client not available
-
-Check the Mem0 API logs:
+Check API logs:
 ```bash
 az containerapp logs show --name mem0-api --resource-group jarvis-rg --tail 50
 ```
 
-Look for:
-- `Qdrant response: {'results': []}` - Qdrant connected successfully
-- `HTTP/1.1 200 OK` to Qdrant URL - Connection working
-- `timed out` or `Name or service not known` - Connection issue
+Look for successful Qdrant connection:
+```
+HTTP Request: POST http://qdrant.internal.<env>/collections/... "HTTP/1.1 200 OK"
+```
 
-### 301 Redirect Error
+## Connection timeout
 
-Enable insecure connections on Qdrant:
+Ensure Qdrant allows insecure connections:
 ```bash
 az containerapp ingress update --name qdrant --resource-group jarvis-rg --allow-insecure
 ```
 
-## Related Projects
+## API returns null
 
-- [ADA V2](https://github.com/nazirlouis/ada_v2) - Personal AI assistant that uses this memory system
-- [JARVIS On-Prem](https://github.com/vyente-ruffin/jarvis-onprem) - Local/on-prem version for Claude Code MCP
-- [Mem0](https://github.com/mem0ai/mem0) - The underlying memory framework
-- [Qdrant](https://qdrant.tech/) - Vector database for semantic search
+This is normal when:
+- Memory content is deduplicated (already exists)
+- The `infer` parameter extracted no new facts
 
-## License
+Check stats endpoint to verify memories are being stored.
+
+---
+
+# Related Projects
+
+- [ADA V2](https://github.com/nazirlouis/ada_v2) - JARVIS personal assistant
+- [Mem0](https://github.com/mem0ai/mem0) - Underlying memory framework
+- [Qdrant](https://qdrant.tech/) - Vector database
+
+---
+
+# License
 
 MIT
