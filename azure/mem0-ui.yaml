@@ -1,0 +1,27 @@
+# Mem0 UI (OpenMemory Dashboard) - Azure Container App
+# Deploy with: az containerapp create --resource-group <rg> --yaml azure/mem0-ui.yaml
+#
+# Prerequisites:
+# 1. Deploy mem0-api first and get its external URL
+
+properties:
+  configuration:
+    ingress:
+      external: true
+      targetPort: 3000
+      transport: auto
+  template:
+    containers:
+      - name: mem0-ui
+        image: mem0ai/openmemory-ui:latest
+        resources:
+          cpu: 0.25
+          memory: 0.5Gi
+        env:
+          - name: NEXT_PUBLIC_API_URL
+            value: "<REPLACE_WITH_MEM0_API_URL>"
+          - name: NEXT_PUBLIC_USER_ID
+            value: sudo
+    scale:
+      minReplicas: 1
+      maxReplicas: 1

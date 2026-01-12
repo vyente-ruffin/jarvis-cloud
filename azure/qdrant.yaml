@@ -1,0 +1,23 @@
+# Qdrant Vector Database - Azure Container App
+# Deploy with: az containerapp create --resource-group <rg> --yaml azure/qdrant.yaml
+#
+# Note: Uses internal ingress only - not exposed to internet
+# Other containers access via: qdrant.internal.<env-id>.<region>.azurecontainerapps.io
+
+properties:
+  configuration:
+    ingress:
+      external: false
+      targetPort: 6333
+      transport: auto
+      allowInsecure: true  # Required for HTTP access from mem0-api
+  template:
+    containers:
+      - name: qdrant
+        image: qdrant/qdrant:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+    scale:
+      minReplicas: 1
+      maxReplicas: 1

@@ -1,0 +1,35 @@
+# Mem0 API (OpenMemory MCP Server) - Azure Container App
+# Deploy with: az containerapp create --resource-group <rg> --yaml azure/mem0-api.yaml
+#
+# Prerequisites:
+# 1. Build and push custom image: az acr build --registry <acr> --image mem0-patched:v3 .
+# 2. Create secret: az containerapp secret set --name mem0-api --secrets openai-key=<your-key>
+# 3. Deploy Qdrant first
+
+properties:
+  configuration:
+    ingress:
+      external: true
+      targetPort: 8765
+      transport: auto
+    secrets:
+      - name: openai-key
+        value: "<REPLACE_WITH_OPENAI_API_KEY>"
+    registries:
+      - server: <acr-name>.azurecr.io
+        identity: system
+  template:
+    containers:
+      - name: mem0-api
+        image: <acr-name>.azurecr.io/mem0-patched:v3
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: OPENAI_API_KEY
+            secretRef: openai-key
+          - name: USER
+            value: sudo
+    scale:
+      minReplicas: 1
+      maxReplicas: 3
