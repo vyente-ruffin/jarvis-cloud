@@ -50,6 +50,36 @@ Any service, device, or application can consume this API to store, retrieve, and
                      Azure Container Apps
 ```
 
+### Azure Infrastructure
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Azure Container Apps                          │
+│                    (jarvis-env, East US)                        │
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │   Qdrant     │    │  Mem0 API    │    │  Mem0 UI     │       │
+│  │  (Vectors)   │◄───│   (REST)     │    │   (Portal)   │       │
+│  │              │    │              │    │              │       │
+│  │  internal    │    │  external    │    │  external    │       │
+│  │  :6333       │    │  :8765       │    │  :3000       │       │
+│  └──────────────┘    └──────┬───────┘    └──────┬───────┘       │
+│                             │                   │                │
+└─────────────────────────────┼───────────────────┼────────────────┘
+                              │                   │
+                    ┌─────────┴───────────────────┴─────────┐
+                    │            HTTPS Access               │
+                    └─────────┬───────────────────┬─────────┘
+                              │                   │
+              ┌───────────────┴───────┐   ┌──────┴────────┐
+              │   REST API Consumers  │   │   Web Portal  │
+              │  • ADA V2 Assistant   │   │   (Browser)   │
+              │  • Smart Home/HA      │   │               │
+              │  • Mobile Apps        │   │               │
+              │  • Any HTTP Client    │   │               │
+              └───────────────────────┘   └───────────────┘
+```
+
 ## Base URL
 
 ```
