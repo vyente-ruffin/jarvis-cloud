@@ -309,6 +309,7 @@ search_memories "music preferences"
 | File Share | Azure Files | `redis-data` | Redis AOF data |
 | Container App | Microsoft.App/containerApps | `redis` | Vector database (internal) |
 | Container App | Microsoft.App/containerApps | `agent-memory-server` | Memory API |
+| Container App | Microsoft.App/containerApps | `redis-insight` | Web UI for browsing Redis data |
 
 ## Deploy Redis Stack with Persistence
 
@@ -452,6 +453,52 @@ Redis is configured with AOF (Append Only File) persistence, mounted to Azure Fi
 Data persists across container restarts. To verify:
 ```bash
 az storage file list --account-name jarvisredisstore --share-name redis-data --output table
+```
+
+---
+
+# Redis Insight (Web UI)
+
+A web-based UI for browsing and managing Redis data.
+
+**URL:** https://redis-insight.lemonbay-c4ff031f.eastus2.azurecontainerapps.io
+
+## Viewing Memories
+
+1. Open Redis Insight URL in browser
+2. Redis database is auto-discovered at `redis:6379` - click to connect
+3. Navigate to **Browse** tab
+4. Expand the `memory_idx` folder in the left tree view
+5. Click any Hash entry to view the memory details
+
+## Memory Data Structure
+
+Each memory is stored as a Redis Hash with these fields:
+
+| Field | Description |
+|-------|-------------|
+| `text` | The actual memory content |
+| `memory_type` | Type (semantic) |
+| `user_id` | User namespace |
+| `topics` | Topic tags |
+| `id_` | Unique memory ID |
+| `embedding` | Vector embedding (binary) |
+| `created_at` | Creation timestamp |
+| `last_accessed` | Last retrieval timestamp |
+| `access_count` | Number of times accessed |
+| `memory_hash` | Deduplication hash |
+
+## Deploy Redis Insight
+
+```bash
+az containerapp create \
+  --name redis-insight \
+  --resource-group rg-youni-dev \
+  --environment jarvis-cae-afttmtxdb5reg \
+  --image redis/redisinsight:latest \
+  --cpu 0.25 --memory 0.5Gi \
+  --min-replicas 1 --max-replicas 1 \
+  --ingress external --target-port 5540
 ```
 
 ---
