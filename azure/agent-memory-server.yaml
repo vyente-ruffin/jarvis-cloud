@@ -1,0 +1,39 @@
+# Agent Memory Server - Azure Container App
+# Deploy with: az containerapp create --resource-group <rg> --yaml azure/agent-memory-server.yaml
+#
+# Prerequisites:
+# 1. Deploy Redis first
+# 2. Create secret: az containerapp secret set --name agent-memory-server --secrets openai-key=<your-key>
+#
+# Access via: https://agent-memory-server.<env-id>.<region>.azurecontainerapps.io
+
+properties:
+  configuration:
+    ingress:
+      external: true
+      targetPort: 8000
+      transport: auto
+    secrets:
+      - name: openai-key
+        value: "<REPLACE_WITH_OPENAI_API_KEY>"
+  template:
+    containers:
+      - name: agent-memory-server
+        image: ghcr.io/redis/agent-memory-server:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: REDIS_URL
+            value: "redis://redis:6379"
+          - name: OPENAI_API_KEY
+            secretRef: openai-key
+          - name: DISABLE_AUTH
+            value: "true"
+          - name: LONG_TERM_MEMORY
+            value: "true"
+          - name: LOG_LEVEL
+            value: "INFO"
+    scale:
+      minReplicas: 1
+      maxReplicas: 3
