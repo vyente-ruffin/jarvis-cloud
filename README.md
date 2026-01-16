@@ -305,13 +305,40 @@ search_memories "music preferences"
 | Container Registry | Microsoft.ContainerRegistry | `jarvisacrafttmtxdb5reg` | Docker images |
 | Log Analytics | Microsoft.OperationalInsights | `jarvis-law-*` | Logging |
 | Container Apps Environment | Microsoft.App/managedEnvironments | `jarvis-cae-afttmtxdb5reg` | Hosts containers |
+| Storage Account | Microsoft.Storage | `jarvisredisstore` | Redis persistence |
+| File Share | Azure Files | `redis-data` | Redis AOF data |
 | Container App | Microsoft.App/containerApps | `redis` | Vector database (internal) |
 | Container App | Microsoft.App/containerApps | `agent-memory-server` | Memory API |
 
-## Deploy Redis Stack
+## Deploy Redis Stack with Persistence
 
 ```bash
-# Create Redis Stack container (internal only)
+# 1. Create storage account
+az storage account create \
+  --name jarvisredisstore \
+  --resource-group rg-youni-dev \
+  --location eastus2 \
+  --sku Standard_LRS
+
+# 2. Create file share
+az storage share-rm create \
+  --resource-group rg-youni-dev \
+  --storage-account jarvisredisstore \
+  --name redis-data \
+  --quota 1024
+
+# 3. Link storage to environment
+STORAGE_KEY=$(az storage account keys list -n jarvisredisstore --resource-group rg-youni-dev --query "[0].value" -o tsv)
+az containerapp env storage set \
+  --name jarvis-cae-afttmtxdb5reg \
+  --resource-group rg-youni-dev \
+  --storage-name redisdata \
+  --azure-file-account-name jarvisredisstore \
+  --azure-file-account-key "$STORAGE_KEY" \
+  --azure-file-share-name redis-data \
+  --access-mode ReadWrite
+
+# 4. Create Redis with volume mount (use YAML for volume config)
 az containerapp create \
   --name redis \
   --resource-group rg-youni-dev \
@@ -320,6 +347,11 @@ az containerapp create \
   --cpu 0.5 --memory 1Gi \
   --min-replicas 1 --max-replicas 1 \
   --ingress internal --target-port 6379 --transport tcp
+
+# 5. Export and update with volume mount
+az containerapp show --name redis --resource-group rg-youni-dev --output yaml > redis.yaml
+# Add volumes and volumeMounts (see redis-app.yaml example)
+az containerapp update --name redis --resource-group rg-youni-dev --yaml redis.yaml
 ```
 
 ## Deploy Agent Memory Server
@@ -362,8 +394,8 @@ jarvis-cloud/
 +-- azure/
 |   +-- redis.yaml         # Redis Stack container definition
 |   +-- agent-memory-server.yaml  # Memory API container definition
-|   +-- qdrant.yaml        # (deprecated)
-|   +-- mem0-api.yaml      # (deprecated)
+|   +-- qdrant.yaml        # (deprecated - was for Mem0)
+|   +-- mem0-api.yaml      # (deprecated - replaced by Redis)
 +-- scripts/
     +-- deploy.sh          # Deployment script
 ```
@@ -408,9 +440,19 @@ az containerapp show --name redis --resource-group rg-youni-dev \
   --query "properties.runningStatus"
 ```
 
-## Storage Note
+## Persistence
 
-Current deployment uses in-container storage. Data persists as long as the container is running but will be lost on container restart. For production, consider mounting Azure Storage.
+Redis is configured with AOF (Append Only File) persistence, mounted to Azure Files:
+
+- **Storage Account:** `jarvisredisstore`
+- **File Share:** `redis-data`
+- **Mount Path:** `/data`
+- **Redis Args:** `--appendonly yes --dir /data`
+
+Data persists across container restarts. To verify:
+```bash
+az storage file list --account-name jarvisredisstore --share-name redis-data --output table
+```
 
 ---
 
