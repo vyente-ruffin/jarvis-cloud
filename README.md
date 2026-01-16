@@ -459,34 +459,118 @@ az storage file list --account-name jarvisredisstore --share-name redis-data --o
 
 # Redis Insight (Web UI)
 
-A web-based UI for browsing and managing Redis data.
+A web-based UI for browsing and managing Redis data visually.
 
 **URL:** https://redis-insight.lemonbay-c4ff031f.eastus2.azurecontainerapps.io
 
-## Viewing Memories
+## UI Overview
 
-1. Open Redis Insight URL in browser
-2. Redis database is auto-discovered at `redis:6379` - click to connect
-3. Navigate to **Browse** tab
-4. Expand the `memory_idx` folder in the left tree view
-5. Click any Hash entry to view the memory details
+Redis Insight provides a graphical interface to explore your Redis database:
+
+```
++------------------------------------------------------------------+
+|  Redis Logo    [Databases]  redis:6379  /  db0     [Refresh] [i] |
++------------------------------------------------------------------+
+|  [Browse]  [Workbench]  [Analyze]  [Pub/Sub]                     |
++------------------------------------------------------------------+
+|  LEFT PANEL (Tree View)     |  RIGHT PANEL (Details)             |
+|                             |                                     |
+|  > memory_idx (7 keys)      |  Hash: memory_idx:azure-test-001   |
+|    - 01KF2MGXEB32...        |  Key Size: 8 KB  |  Length: 15     |
+|    - azure-test-001  <--    |                                     |
+|    - jarvis-858c...         |  Field          | Value            |
+|  > memory-server (9 keys)   |  ---------------+------------------+
+|  > runs (8 keys)            |  text           | User favorite... |
+|  > working_memory (1 key)   |  memory_type    | semantic         |
+|                             |  user_id        | sudo             |
++------------------------------------------------------------------+
+```
+
+## Step-by-Step: Viewing Memories
+
+### 1. Connect to Database
+- Open the URL in your browser
+- Redis database `redis:6379` is auto-discovered
+- Click on it to connect (or it may auto-connect)
+
+### 2. Navigate the Browser Tab
+- The **Browse** tab is selected by default
+- Left panel shows a tree view of all Redis keys organized by namespace
+- Right panel shows details of the selected key
+
+### 3. Understanding the Folders
+
+| Folder | Keys | Contents |
+|--------|------|----------|
+| `memory_idx` | 7 | **Your memories** - Each Hash contains one memory with text, metadata, and vector embedding |
+| `memory-server` | 9 | Internal processing stream and events (serialized data, not human-readable) |
+| `runs` | 8 | Background job tracking |
+| `working_memory` | 1 | Short-term working memory buffer |
+
+### 4. View a Memory
+1. Click the arrow next to `memory_idx` to expand it
+2. You'll see a list of Hash keys (your memory IDs)
+3. Click any Hash entry (e.g., `azure-test-001`)
+4. Right panel shows all fields in a table:
+   - **Field** column: field names
+   - **Value** column: field values
+   - Look for the `text` field - that's your actual memory content
+
+### 5. Key UI Elements
+
+| Element | Location | Purpose |
+|---------|----------|---------|
+| **Tree View toggle** | Top of left panel | Switch between tree and list view |
+| **Filter box** | Top of left panel | Search keys by name pattern |
+| **Key Type dropdown** | Next to filter | Filter by type (Hash, String, Stream, etc.) |
+| **Refresh button** | Top right | Reload data from Redis |
+| **Unicode dropdown** | Above details table | Change encoding (keep as Unicode) |
+| **Add Fields** | Above details table | Add new fields to a Hash |
+| **Delete Key** | Top right of details | Delete the selected key |
 
 ## Memory Data Structure
 
-Each memory is stored as a Redis Hash with these fields:
+Each memory in `memory_idx` is stored as a Redis Hash:
 
-| Field | Description |
-|-------|-------------|
-| `text` | The actual memory content |
-| `memory_type` | Type (semantic) |
-| `user_id` | User namespace |
-| `topics` | Topic tags |
-| `id_` | Unique memory ID |
-| `embedding` | Vector embedding (binary) |
-| `created_at` | Creation timestamp |
-| `last_accessed` | Last retrieval timestamp |
-| `access_count` | Number of times accessed |
-| `memory_hash` | Deduplication hash |
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | string | **The actual memory content** (human-readable) |
+| `memory_type` | string | Always "semantic" for long-term memories |
+| `user_id` | string | User namespace (e.g., "sudo") |
+| `topics` | string | Comma-separated topic tags (e.g., "jarvis-voice") |
+| `id_` | string | Unique memory ID |
+| `embedding` | binary | 1536-dimension vector for semantic search (not human-readable) |
+| `created_at` | float | Unix timestamp when memory was created |
+| `updated_at` | float | Unix timestamp when memory was last modified |
+| `last_accessed` | float | Unix timestamp when memory was last retrieved |
+| `access_count` | int | Number of times this memory was accessed |
+| `memory_hash` | string | SHA256 hash for deduplication |
+| `pinned` | int | 1 if pinned, 0 if not |
+| `_metadata_json` | JSON | Full metadata as JSON (redundant but searchable) |
+| `_index_name` | string | Redis index name ("memory_records") |
+
+## Other Useful Tabs
+
+| Tab | Purpose |
+|-----|---------|
+| **Workbench** | Run Redis commands directly (e.g., `KEYS *`, `HGETALL memory_idx:*`) |
+| **Analyze** | View memory usage and key distribution statistics |
+| **Pub/Sub** | Monitor real-time pub/sub messages |
+
+## CLI Alternative
+
+You can also access the same data via the Workbench tab or CLI:
+
+```bash
+# List all memory keys
+KEYS memory_idx:*
+
+# Get all fields for a specific memory
+HGETALL memory_idx:azure-test-001
+
+# Get just the text field
+HGET memory_idx:azure-test-001 text
+```
 
 ## Deploy Redis Insight
 
