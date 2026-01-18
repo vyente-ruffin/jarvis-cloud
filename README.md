@@ -1,5 +1,7 @@
 # JARVIS Cloud - Memory API
 
+> **DEPRECATION NOTICE:** This project has been superseded by [eon-memory](https://github.com/vyente-ruffin/eon-memory). All Azure resources are tagged with `cleanup=true` and scheduled for deletion. See the [Azure Resources](#azure-resources) section for the full list.
+
 A cloud-hosted AI memory system providing long-term semantic memory storage via REST API. Built on [Redis Agent Memory Server](https://github.com/redis/agent-memory-server) with vector search, deployed to Azure Container Apps.
 
 Any service, device, or application can consume this API to store, retrieve, and search memories.
@@ -300,16 +302,44 @@ search_memories "music preferences"
 
 ## Azure Resources
 
-| Resource | Type | Name | Purpose |
-|----------|------|------|---------|
-| Container Registry | Microsoft.ContainerRegistry | `jarvisacrafttmtxdb5reg` | Docker images |
-| Log Analytics | Microsoft.OperationalInsights | `jarvis-law-*` | Logging |
-| Container Apps Environment | Microsoft.App/managedEnvironments | `jarvis-cae-afttmtxdb5reg` | Hosts containers |
-| Storage Account | Microsoft.Storage | `jarvisredisstore` | Redis persistence |
-| File Share | Azure Files | `redis-data` | Redis AOF data |
-| Container App | Microsoft.App/containerApps | `redis` | Vector database (internal) |
-| Container App | Microsoft.App/containerApps | `agent-memory-server` | Memory API |
-| Container App | Microsoft.App/containerApps | `redis-insight` | Web UI for browsing Redis data |
+> **All resources below are tagged with `cleanup=true` and scheduled for deletion.**
+
+### Resource Group: `rg-youni-dev` (eastus2)
+
+| Resource | Type | Name | Purpose | Tag |
+|----------|------|------|---------|-----|
+| Container Registry | Microsoft.ContainerRegistry | `jarvisacrafttmtxdb5reg` | Docker images | `cleanup=true` |
+| Log Analytics | Microsoft.OperationalInsights | `jarvis-law-afttmtxdb5reg` | Logging | `cleanup=true` |
+| Application Insights | Microsoft.Insights/components | `jarvis-appi-afttmtxdb5reg` | Monitoring | `cleanup=true` |
+| Container Apps Environment | Microsoft.App/managedEnvironments | `jarvis-cae-afttmtxdb5reg` | Hosts containers | `cleanup=true` |
+| Storage Account | Microsoft.Storage | `jarvisredisstore` | Redis persistence (redis-data file share) | `cleanup=true` |
+| Container App | Microsoft.App/containerApps | `redis` | Vector database (prod, internal) | `cleanup=true` |
+| Container App | Microsoft.App/containerApps | `agent-memory-server` | Memory API (prod) | `cleanup=true` |
+| Container App | Microsoft.App/containerApps | `redis-insight` | Redis web UI | `cleanup=true` |
+| Azure OpenAI | Microsoft.CognitiveServices | `jarvis-voice-openai` | Embeddings API (shared with jarvis-voice) | `cleanup=true` |
+
+### Resource Group: `rg-jarvis-dev` (eastus2)
+
+| Resource | Type | Name | Purpose | Tag |
+|----------|------|------|---------|-----|
+| Container App | Microsoft.App/containerApps | `agent-memory-server-dev` | Memory API (dev) | `cleanup=true` |
+| Container App | Microsoft.App/containerApps | `redis-dev` | Vector database (dev, internal) | `cleanup=true` |
+
+### Cleanup Commands
+
+To delete all tagged resources:
+
+```bash
+# List all resources with cleanup=true tag
+az resource list --tag cleanup=true --query "[].{name:name, resourceGroup:resourceGroup, type:type}" -o table
+
+# Delete resources (run for each resource group)
+az resource list -g rg-youni-dev --tag cleanup=true --query "[].id" -o tsv | xargs -I {} az resource delete --ids {}
+az resource list -g rg-jarvis-dev --tag cleanup=true --query "[].id" -o tsv | xargs -I {} az resource delete --ids {}
+
+# Delete resource group (after all resources are removed)
+az group delete --name rg-jarvis-dev --yes
+```
 
 ## Deploy Redis Stack with Persistence
 
